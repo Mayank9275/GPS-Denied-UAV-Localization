@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Datasets
+Data/
+
+# Model weights
+weights/
+ckpt/
+*.pth
+*.pt
+*.ckpt
+
+# Results
+outputs/
+Result/
+
+# Generated files
+*.png
+*.jpg
+*.jpeg
+*.json
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db

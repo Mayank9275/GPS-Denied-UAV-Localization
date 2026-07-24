@@ -21,6 +21,7 @@ import hashlib
 import re
 import os
 import pickle
+import random
 
 import cv2
 import numpy as np
@@ -30,6 +31,30 @@ from PIL import Image
 from Matching_Models.RoMa.demo.Roma_match import Roma_Init, Roma_match
 from Retrieval_Models.feature_extract import extract_features
 from Retrieval_Models.multi_model_loader import get_Model
+
+
+def set_deterministic_inference(seed=0, deterministic_algorithms=False):
+    """Seed Python/NumPy/Torch/OpenCV RNGs used by inference-time sampling."""
+    seed = int(seed)
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    random.seed(seed)
+    np.random.seed(seed)
+    cv2.setRNGSeed(seed)
+    cv2.setNumThreads(1)
+    torch.manual_seed(seed)
+    torch.set_num_threads(1)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    if deterministic_algorithms:
+        torch.use_deterministic_algorithms(True, warn_only=True)
 
 
 def save_data(filename, **kwargs):
@@ -438,6 +463,8 @@ def run_pixel_match_anyvisloc(
 
     if feature_type == "roma":
         Roma_model = method_dict["matching_model"]
+        seed = int(method_dict.get("deterministic_seed", 0))
+        set_deterministic_inference(seed)
         return Roma_match(
             uav_img,
             ref_img,
@@ -1411,6 +1438,7 @@ def estimate_drone_pose_anyvisloc(
     reprojection_error=8.0,
     iterations_count=2000,
     confidence=0.999,
+    deterministic_seed=0,
 ):
     """PnP in AnyVisLoc dataset-local coordinates.
 
@@ -1433,6 +1461,7 @@ def estimate_drone_pose_anyvisloc(
     else:
         dist_coeffs = np.asarray(dist_coeffs, dtype=np.float32).reshape(-1, 1)
 
+    cv2.setRNGSeed(int(deterministic_seed))
     ok, rvec, tvec, inliers = cv2.solvePnPRansac(
         object_points_pnp,
         image_points,
@@ -1592,6 +1621,7 @@ def Match2Pos_all_anyvisloc(
                 reprojection_error=getattr(opt, "pnp_reproj_error", 8.0),
                 iterations_count=getattr(opt, "pnp_iterations", 2000),
                 confidence=getattr(opt, "pnp_confidence", 0.999),
+                deterministic_seed=getattr(opt, "deterministic_seed", 0) + int(index),
             )
 
             candidate_error_m = None
@@ -1635,17 +1665,37 @@ def Match2Pos_all_anyvisloc(
     return XYZ_list, inliers_list, match_time, pnp_time
 
 
+def select_pose_anyvisloc(XYZ_list, inliers_list):
+    """Choose the Top-N PnP candidate with max inliers and return local XYZ.
+
+    This is the inference-only part of ``pos2error_anyvisloc``. It preserves the
+    same candidate-selection rule without requiring benchmark ground truth.
+    """
+    if len(XYZ_list) == 0:
+        return {"x": None, "y": None, "z": None}, False, None
+
+    inliers_array = np.asarray(inliers_list, dtype=np.int64)
+    best_index = int(np.argmax(inliers_array)) if inliers_array.size else 0
+    best = XYZ_list[best_index]
+    pred_loc = {"x": best.get("X"), "y": best.get("Y"), "z": best.get("Z")}
+    pnp_success = (
+        pred_loc["x"] is not None
+        and pred_loc["y"] is not None
+        and best_index < len(inliers_list)
+        and int(inliers_list[best_index]) > 0
+    )
+    return pred_loc, bool(pnp_success), best_index
+
+
 def pos2error_anyvisloc(truePos, XYZ_list, inliers_list):
     """Choose the Top-N candidate with max PnP inliers and compute local XY error in meters.
 
     Invalid PnP results return pred_error=None instead of the old 10000.0 sentinel,
     so summary statistics can exclude failed localizations cleanly.
     """
-    if len(XYZ_list) == 0:
-        return {"x": None, "y": None, "z": None}, None, [], False, None
-
-    inliers_array = np.asarray(inliers_list, dtype=np.int64)
-    best_index = int(np.argmax(inliers_array)) if inliers_array.size else 0
+    pred_loc, pnp_success, best_index = select_pose_anyvisloc(XYZ_list, inliers_list)
+    if best_index is None:
+        return pred_loc, None, [], False, None
 
     location_error_list = []
     for pred in XYZ_list:
@@ -1656,17 +1706,8 @@ def pos2error_anyvisloc(truePos, XYZ_list, inliers_list):
         else:
             location_error_list.append(None)
 
-    best = XYZ_list[best_index]
-    pred_loc = {"x": best.get("X"), "y": best.get("Y"), "z": best.get("Z")}
-
     pred_error = location_error_list[best_index]
-    pnp_success = (
-        pred_loc["x"] is not None
-        and pred_loc["y"] is not None
-        and pred_error is not None
-        and best_index < len(inliers_list)
-        and int(inliers_list[best_index]) > 0
-    )
+    pnp_success = bool(pnp_success and pred_error is not None)
     return pred_loc, pred_error, location_error_list, bool(pnp_success), best_index
 
 
