@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Batch-localize every UAV frame in Data/my_own_data/frames/.
-
+Custom Data of my UAV
 Run:
 
     python run_uav_folder.py
