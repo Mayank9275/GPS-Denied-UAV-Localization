@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Batch-localize every UAV frame in Data/my_own_data/frames/.
-Custom Data of my UAV
+Custom Data of my UAV and Satellite Map png
 Run:
 
     python run_uav_folder.py
@@ -21,7 +21,7 @@ SATELLITE_MAP = r"Data\my_own_data\satellite_map.png"
 PGW_FILE = r"Data\my_own_data\satellite_map.pgw"
 OUTPUT_DIR = Path("outputs")
 ALTITUDE = 600.0
-
+print("UAV Img and Satellight map is Loaded")
 K = np.array(
     [
         [1066.0, 0.0, 960.0],
