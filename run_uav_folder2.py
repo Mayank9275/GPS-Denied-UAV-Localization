@@ -39,7 +39,6 @@ from single_image_localization import (
 # =============================================================================
 # Paths
 # =============================================================================
-
 FRAMES_DIR = Path(r"Data\my_own_data\frames")
 SATELLITE_MAP = Path(r"Data\my_own_data\satellite_map.png")
 PGW_FILE = Path(r"Data\my_own_data\satellite_map.pgw")

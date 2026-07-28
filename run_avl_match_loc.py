@@ -63,7 +63,7 @@ def parse_matching_methods(values):
         return [x.strip() for x in values[0].split(",") if x.strip()]
     return [str(x).strip() for x in values if str(x).strip()]
 
-
+print("-")
 def get_parse():
     parser = argparse.ArgumentParser(description="AnyVisLoc match+PnP test runner")
     parser.add_argument("--dataset_root", required=True, type=str)
