@@ -221,6 +221,70 @@ def _local_xy_to_pixel(x, y, map_resolution, map_origin_local):
     return col, row
 
 
+def valid_pose(x, y, z, map_width, map_height):
+    pose = np.asarray([x, y, z], dtype=np.float64)
+
+    if not np.all(np.isfinite(pose)):
+        return False
+
+    if abs(x) > 1e6 or abs(y) > 1e6 or abs(z) > 1e6:
+        return False
+
+    if x < 0 or y < 0:
+        return False
+
+    if x >= map_width or y >= map_height:
+        return False
+
+    return True
+
+
+def _filter_retrieved_candidates(
+    row_starts,
+    col_starts,
+    patch_h,
+    patch_w,
+    *,
+    deduplicate_candidates=True,
+    max_matching_candidates=3,
+):
+    retrieved_candidates = []
+    for row, col in zip(row_starts, col_starts):
+        retrieved_candidates.append(
+            {
+                "row": int(row),
+                "col": int(col),
+                "height": int(patch_h),
+                "width": int(patch_w),
+            }
+        )
+
+    if deduplicate_candidates:
+        unique_candidates = []
+        seen = set()
+
+        for candidate in retrieved_candidates:
+            key = (
+                int(candidate["row"]),
+                int(candidate["col"]),
+                int(candidate["height"]),
+                int(candidate["width"]),
+            )
+
+            if key not in seen:
+                seen.add(key)
+                unique_candidates.append(candidate)
+
+        retrieved_candidates = unique_candidates
+
+    if max_matching_candidates is not None:
+        retrieved_candidates = retrieved_candidates[: int(max_matching_candidates)]
+
+    filtered_row_starts = [int(candidate["row"]) for candidate in retrieved_candidates]
+    filtered_col_starts = [int(candidate["col"]) for candidate in retrieved_candidates]
+    return retrieved_candidates, filtered_row_starts, filtered_col_starts
+
+
 def _draw_prediction(satellite_bgr, pred_x, pred_y, view, output_path, draw_text=True):
     col, row = _local_xy_to_pixel(pred_x, pred_y, view["map_resolution"], view["map_origin_local"])
     out = satellite_bgr.copy()
@@ -381,6 +445,7 @@ def build_real_opt(
         pnp_iterations=2000,
         pnp_confidence=0.999,
         deterministic_seed=int(deterministic_seed),
+        debug_trace=True,
         _current_scene_name="real_uav",
         _current_sample_id=sample_id,
     )
@@ -482,6 +547,9 @@ def localize_image(
     prior_x=None,
     prior_y=None,
     work_dir="real_uav_work",
+    deduplicate_candidates=True,
+    max_matching_candidates=3,
+    early_stop_inliers=180,
 ):
     set_deterministic_inference(deterministic_seed)
     t0 = time.time()
@@ -553,6 +621,16 @@ def localize_image(
         method_dict,
     )
 
+    retrieved_candidates, row_starts, col_starts = _filter_retrieved_candidates(
+        row_starts,
+        col_starts,
+        patch_h,
+        patch_w,
+        deduplicate_candidates=deduplicate_candidates,
+        max_matching_candidates=max_matching_candidates,
+    )
+    method_dict["retrieved_candidates"] = retrieved_candidates
+
     XYZ_list, inliers_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
         opt,
         config,
@@ -574,16 +652,37 @@ def localize_image(
         view["dsm_origin_local"],
         dist=np.zeros(5, dtype=np.float32),
         truePos=None,
+        early_stop_inliers=early_stop_inliers,
     )
 
     pred_loc, pnp_success, best_index = select_pose_anyvisloc(XYZ_list, inliers_list)
     if not pnp_success:
         raise RuntimeError("PnP failed; no valid predicted UAV position was produced.")
+    if bool(getattr(opt, "debug_trace", False)):
+        selected_row = None if best_index is None else int(row_starts[best_index])
+        selected_col = None if best_index is None else int(col_starts[best_index])
+        print(
+            f"[trace] selected patch: index={best_index}, row={selected_row}, col={selected_col}, "
+            f"best_inliers={0 if best_index is None else int(inliers_list[best_index])}"
+        )
 
     pred_x = float(pred_loc["x"])
     pred_y = float(pred_loc["y"])
     pred_z = None if pred_loc.get("z") is None else float(pred_loc["z"])
+    satellite_h, satellite_w = satellite_bgr.shape[:2]
+    if bool(getattr(opt, "debug_trace", False)):
+        print(
+            f"[trace] map before pixel conversion: map_resolution={view['map_resolution'].tolist()}, "
+            f"map_origin_local={view['map_origin_local'].tolist()}"
+        )
     pred_col, pred_row = _local_xy_to_pixel(pred_x, pred_y, view["map_resolution"], view["map_origin_local"])
+    if bool(getattr(opt, "debug_trace", False)):
+        inside = 0 <= pred_col < satellite_w and 0 <= pred_row < satellite_h
+        print(
+            f"[trace] final prediction: local_x={pred_x}, local_y={pred_y}, local_z={pred_z}, "
+            f"pixel_col={pred_col}, pixel_row={pred_row}, "
+            f"satellite_size=({satellite_w}, {satellite_h}), inside={inside}"
+        )
     world_x, world_y = pixel_to_world(pred_col, pred_row, pgw)
 
     label = f"UAV ({pred_col:.1f}, {pred_row:.1f})"
@@ -614,6 +713,7 @@ def localize_image(
         "world_file_affine": pgw,
         "best_index": None if best_index is None else int(best_index),
         "best_inliers": int(max(inliers_list) if len(inliers_list) else 0),
+        "retrieved_candidates": retrieved_candidates,
         "retrieval_time_s": float(retrieval_time),
         "match_time_s": [float(x) for x in match_time],
         "pnp_time_s": [float(x) for x in pnp_time],

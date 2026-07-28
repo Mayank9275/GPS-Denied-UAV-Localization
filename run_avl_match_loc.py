@@ -422,7 +422,8 @@ def resize_for_matching(uav_bgr, ref_patch, true_pos, map_resolution, opt):
         uav_match = uav_bgr
         uav_scale = 1.0
 
-    ref_resize = uav_scale / max(float(fine_scale), 1e-12)
+    # The goal is to match the resolution of the resized UAV image.
+    ref_resize = float(fine_scale) / max(uav_scale, 1e-12)
     ref_match = cv2.resize(ref_patch, None, fx=ref_resize, fy=ref_resize)
     return uav_match, ref_match, float(fine_scale), float(ref_resize), float(uav_scale)
 

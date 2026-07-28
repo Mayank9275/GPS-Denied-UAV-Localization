@@ -20,8 +20,7 @@ FRAMES_DIR = Path(r"Data\my_own_data\frames")
 SATELLITE_MAP = r"Data\my_own_data\satellite_map.png"
 PGW_FILE = r"Data\my_own_data\satellite_map.pgw"
 OUTPUT_DIR = Path("outputs")
-ALTITUDE = 600.0
-print("UAV Img and Satellight map is Loaded")
+ALTITUDE = 500.0
 K = np.array(
     [
         [1066.0, 0.0, 960.0],

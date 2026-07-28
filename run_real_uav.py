@@ -22,7 +22,7 @@ from single_image_localization import localize_image
 UAV_IMAGE = r"Data\my_own_data\frame.png"
 SATELLITE_MAP = r"Data\my_own_data\satellite_map.png"
 PGW_FILE = r"Data\my_own_data\satellite_map.pgw"
-ALTITUDE = 800.0
+ALTITUDE = 500.0
 
 # Values must correspond to the actual UAV image resolution you pass in.
 K = np.array(

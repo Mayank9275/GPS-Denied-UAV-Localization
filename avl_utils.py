@@ -1515,9 +1515,11 @@ def Match2Pos_all_anyvisloc(
     dsm_origin_local,
     dist=None,
     truePos=None,
+    early_stop_inliers=None,
 ):
     """Pixel-level matching + PnP for AnyVisLoc local coordinates."""
     ensure_dir(save_path)
+    debug_trace = bool(getattr(opt, "debug_trace", False))
 
     reverseMatRotation = cv2.invertAffineTransform(matRotation) if opt.pose_priori == "yp" else None
     resize_ratio = float(opt.resize_ratio)
@@ -1528,6 +1530,27 @@ def Match2Pos_all_anyvisloc(
         uav_img = cv2.resize(uav_img0, None, fx=resize_ratio, fy=resize_ratio)
     else:
         uav_img = uav_img0
+
+    def valid_pose(x, y, z, map_width, map_height):
+        pose = np.asarray([x, y, z], dtype=np.float64)
+
+        if not np.all(np.isfinite(pose)):
+            return False
+
+        if abs(x) > 1e6 or abs(y) > 1e6 or abs(z) > 1e6:
+            return False
+
+        if x < 0 or y < 0:
+            return False
+
+        if x >= map_width or y >= map_height:
+            return False
+
+        return True
+
+    map_height_px, map_width_px = ref_image.shape[:2]
+    map_width_local = float(map_width_px) * float(map_res[0]) + float(map_origin[0])
+    map_height_local = float(map_height_px) * float(map_res[1]) + float(map_origin[1])
 
     XYZ_list, inliers_list, time_list = [], [], []
     if not isinstance(row_start_list, list):
@@ -1545,6 +1568,11 @@ def Match2Pos_all_anyvisloc(
         ransac_name = f"/top{index + 1}_ransac.jpg"
         row0 = int(row_start_list[index])
         col0 = int(col_start_list[index])
+        if debug_trace:
+            print(
+                f"[trace] retrieval patch {index}: row={row0}, col={col0}, "
+                f"height={int(patch_h)}, width={int(patch_w)}"
+            )
 
         fineRef = ref_image[row0:row0 + int(patch_h), col0:col0 + int(patch_w)]
         if fineRef.size == 0:
@@ -1553,6 +1581,8 @@ def Match2Pos_all_anyvisloc(
             time_list.append([0.0, 0.0])
             continue
 
+        # The goal is to match the resolution of the resized UAV image.
+        fine_scale = float(finescale) / max(resize_ratio, 1e-12)
         fine_scale = resize_ratio / max(float(finescale), 1e-12)
         fineRef = cv2.resize(fineRef, None, fx=fine_scale, fy=fine_scale)
 
@@ -1568,6 +1598,8 @@ def Match2Pos_all_anyvisloc(
         )
         match_time_end = time.time()
         single_match_time = match_time_end - match_time_start
+        if debug_trace:
+            print(f"[trace] roma patch {index}: match_count={len(Ref_pts)}")
 
         if len(Ref_pts) >= 5:
             Sen_pts_arr = np.asarray(Sen_pts, dtype=np.float32)
@@ -1610,6 +1642,18 @@ def Match2Pos_all_anyvisloc(
             input_pnp_count = int(len(match_points))
 
             # Default behavior: use the NPZ camera distortion coefficients in PnP.
+            pnp_method = str(getattr(opt, "PnP_method", "P3P"))
+            if (
+                pnp_method.upper() in ("P3P", "AP3P")
+                and len(DSM) >= 4
+                and np.nanmax(DSM) - np.nanmin(DSM) <= 1e-6
+            ):
+                pnp_method = "EPNP"
+                if debug_trace:
+                    print(
+                        f"[trace] pnp patch {index}: planar DSM detected, "
+                        f"switching solver from {getattr(opt, 'PnP_method', 'P3P')} to EPNP"
+                    )
             XYZ, _, inliers, inliers_all = estimate_drone_pose_anyvisloc(
                 match_points,
                 K,
@@ -1617,12 +1661,37 @@ def Match2Pos_all_anyvisloc(
                 local_y,
                 DSM,
                 dist_coeffs=dist,
-                pnp_method=getattr(opt, "PnP_method", "P3P"),
+                pnp_method=pnp_method,
                 reprojection_error=getattr(opt, "pnp_reproj_error", 8.0),
                 iterations_count=getattr(opt, "pnp_iterations", 2000),
                 confidence=getattr(opt, "pnp_confidence", 0.999),
-                deterministic_seed=getattr(opt, "deterministic_seed", 0) + int(index),
+                deterministic_seed=getattr(opt, "deterministic_seed", 0),
             )
+            pose_valid = (
+                XYZ is not None
+                and XYZ.get("X") is not None
+                and XYZ.get("Y") is not None
+                and XYZ.get("Z") is not None
+                and valid_pose(
+                    float(XYZ["X"]),
+                    float(XYZ["Y"]),
+                    float(XYZ["Z"]),
+                    map_width_local,
+                    map_height_local,
+                )
+            )
+            if not pose_valid:
+                XYZ = {"X": None, "Y": None, "Z": None, "L": None, "B": None, "H": None}
+                inliers = 0
+                inliers_all = []
+            if debug_trace:
+                print(
+                    f"[trace] pnp patch {index}: inliers={int(inliers)}, "
+                    f"x={None if XYZ is None else XYZ.get('X')}, "
+                    f"y={None if XYZ is None else XYZ.get('Y')}, "
+                    f"z={None if XYZ is None else XYZ.get('Z')}, "
+                    f"pose_valid={pose_valid}"
+                )
 
             candidate_error_m = None
             if XYZ is not None and truePos is not None and XYZ.get("X") is not None and XYZ.get("Y") is not None:
@@ -1659,6 +1728,23 @@ def Match2Pos_all_anyvisloc(
         time_list.append([single_match_time, pnp_time_end - match_time_end])
         XYZ_list.append(XYZ)
         inliers_list.append(int(inliers))
+
+        best_inliers = int(max(inliers_list)) if inliers_list else 0
+        pose_valid = (
+            XYZ.get("X") is not None
+            and XYZ.get("Y") is not None
+            and XYZ.get("Z") is not None
+        )
+        if (
+            pose_valid
+            and early_stop_inliers is not None
+            and best_inliers >= early_stop_inliers
+        ):
+            print(
+                f"[trace] early stop with "
+                f"{best_inliers} inliers"
+            )
+            break
 
     match_time = [t[0] for t in time_list]
     pnp_time = [t[1] for t in time_list]
