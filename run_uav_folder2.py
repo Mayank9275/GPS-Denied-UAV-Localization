@@ -39,11 +39,11 @@ from single_image_localization import (
 # =============================================================================
 # Paths
 # =============================================================================
-FRAMES_DIR = Path(r"Data\my_own_data\frames")
-SATELLITE_MAP = Path(r"Data\my_own_data\satellite_map.png")
-PGW_FILE = Path(r"Data\my_own_data\satellite_map.pgw")
+FRAMES_DIR = Path(r"Data\Vedio_1\Extracted-frames")
+SATELLITE_MAP = Path(r"Data\Vedio_1\satellite_map.png")
+PGW_FILE = Path(r"Data\Vedio_1\satellite_map.pgw")
 
-OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR = Path("Data\Vedio_1\Results")
 WORK_DIR = OUTPUT_DIR / "_work"
 PROFILE_DIR = OUTPUT_DIR / "profiling"
 TIMING_CSV = PROFILE_DIR / "frame_timings.csv"
@@ -53,7 +53,7 @@ TIMING_CSV = PROFILE_DIR / "frame_timings.csv"
 # Camera and flight configuration
 # =============================================================================
 
-ALTITUDE = 530.0
+ALTITUDE = 474.0
 
 K_MATRIX = np.array(
     [
