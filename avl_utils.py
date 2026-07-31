@@ -1552,7 +1552,7 @@ def Match2Pos_all_anyvisloc(
     map_width_local = float(map_width_px) * float(map_res[0]) + float(map_origin[0])
     map_height_local = float(map_height_px) * float(map_res[1]) + float(map_origin[1])
 
-    XYZ_list, inliers_list, time_list = [], [], []
+    XYZ_list, inliers_list, pnp_input_count_list, time_list = [], [], [], []
     if not isinstance(row_start_list, list):
         row_start_list = [row_start_list]
         col_start_list = [col_start_list]
@@ -1578,6 +1578,7 @@ def Match2Pos_all_anyvisloc(
         if fineRef.size == 0:
             XYZ_list.append({"X": None, "Y": None, "Z": None, "L": None, "B": None, "H": None})
             inliers_list.append(0)
+            pnp_input_count_list.append(0)
             time_list.append([0.0, 0.0])
             continue
 
@@ -1723,11 +1724,13 @@ def Match2Pos_all_anyvisloc(
         else:
             XYZ = {"X": None, "Y": None, "Z": None, "L": None, "B": None, "H": None}
             inliers = 0
+            input_pnp_count = 0
 
         pnp_time_end = time.time()
         time_list.append([single_match_time, pnp_time_end - match_time_end])
         XYZ_list.append(XYZ)
         inliers_list.append(int(inliers))
+        pnp_input_count_list.append(int(input_pnp_count))
 
         best_inliers = int(max(inliers_list)) if inliers_list else 0
         pose_valid = (
@@ -1748,7 +1751,7 @@ def Match2Pos_all_anyvisloc(
 
     match_time = [t[0] for t in time_list]
     pnp_time = [t[1] for t in time_list]
-    return XYZ_list, inliers_list, match_time, pnp_time
+    return XYZ_list, inliers_list, pnp_input_count_list, match_time, pnp_time
 
 
 def select_pose_anyvisloc(XYZ_list, inliers_list):

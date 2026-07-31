@@ -391,6 +391,20 @@ def _draw_real_prediction(satellite_bgr, col, row, output_path, label=None):
     return out, True
 
 
+def _compute_prediction_confidence(best_inliers, pnp_input_count):
+    best_inliers = int(best_inliers)
+    pnp_input_count = int(pnp_input_count)
+    if best_inliers <= 0 or pnp_input_count <= 0:
+        return 0.0, 0.0
+
+    inlier_ratio = float(best_inliers) / float(max(pnp_input_count, 1))
+    confidence_pct = 100.0 * (
+        0.7 * inlier_ratio + 0.3 * min(float(best_inliers) / 80.0, 1.0)
+    )
+    confidence_pct = float(np.clip(confidence_pct, 0.0, 100.0))
+    return confidence_pct, inlier_ratio
+
+
 def build_real_reference_view(satellite_bgr, pgw):
     h, w = satellite_bgr.shape[:2]
     if abs(float(pgw["b"])) > 1e-9 or abs(float(pgw["d"])) > 1e-9:
@@ -631,7 +645,7 @@ def localize_image(
     )
     method_dict["retrieved_candidates"] = retrieved_candidates
 
-    XYZ_list, inliers_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
+    XYZ_list, inliers_list, pnp_input_count_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
         opt,
         config,
         uav_bgr,
@@ -669,6 +683,9 @@ def localize_image(
     pred_x = float(pred_loc["x"])
     pred_y = float(pred_loc["y"])
     pred_z = None if pred_loc.get("z") is None else float(pred_loc["z"])
+    best_inliers = 0 if best_index is None else int(inliers_list[best_index])
+    best_pnp_input_count = 0 if best_index is None else int(pnp_input_count_list[best_index])
+    confidence_pct, inlier_ratio = _compute_prediction_confidence(best_inliers, best_pnp_input_count)
     satellite_h, satellite_w = satellite_bgr.shape[:2]
     if bool(getattr(opt, "debug_trace", False)):
         print(
@@ -685,7 +702,7 @@ def localize_image(
         )
     world_x, world_y = pixel_to_world(pred_col, pred_row, pgw)
 
-    label = f"UAV ({pred_col:.1f}, {pred_row:.1f})"
+    label = f"UAV ({pred_col:.1f}, {pred_row:.1f}) | Conf {confidence_pct:.1f}%"
     marked, prediction_within_map = _draw_real_prediction(
         satellite_bgr, pred_col, pred_row, output_image, label=label
     )
@@ -712,7 +729,10 @@ def localize_image(
         "prediction_within_map": bool(prediction_within_map),
         "world_file_affine": pgw,
         "best_index": None if best_index is None else int(best_index),
-        "best_inliers": int(max(inliers_list) if len(inliers_list) else 0),
+        "best_inliers": best_inliers,
+        "best_pnp_input_count": best_pnp_input_count,
+        "inlier_ratio": inlier_ratio,
+        "confidence_pct": confidence_pct,
         "retrieved_candidates": retrieved_candidates,
         "retrieval_time_s": float(retrieval_time),
         "match_time_s": [float(x) for x in match_time],
@@ -875,7 +895,7 @@ def main():
         method_dict,
     )
 
-    XYZ_list, inliers_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
+    XYZ_list, inliers_list, pnp_input_count_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
         opt,
         config,
         uav_bgr,
@@ -907,6 +927,9 @@ def main():
 
     pred_x = float(pred_loc["x"])
     pred_y = float(pred_loc["y"])
+    best_inliers = 0 if best_index is None else int(inliers_list[best_index])
+    best_pnp_input_count = 0 if best_index is None else int(pnp_input_count_list[best_index])
+    confidence_pct, inlier_ratio = _compute_prediction_confidence(best_inliers, best_pnp_input_count)
     col, row = _draw_prediction(
         _read_bgr(satellite_path),
         pred_x,
@@ -929,7 +952,10 @@ def main():
         "pred_row": float(row),
         "pred_error_m_from_metadata_gt": None,
         "best_index": None if best_index is None else int(best_index),
-        "best_inliers": int(max(inliers_list) if len(inliers_list) else 0),
+        "best_inliers": best_inliers,
+        "best_pnp_input_count": best_pnp_input_count,
+        "inlier_ratio": inlier_ratio,
+        "confidence_pct": confidence_pct,
         "retrieval_time_s": float(retrieval_time),
         "match_time_s": [float(x) for x in match_time],
         "pnp_time_s": [float(x) for x in pnp_time],

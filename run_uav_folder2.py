@@ -43,7 +43,7 @@ FRAMES_DIR = Path(r"Data\Vedio_1\Extracted-frames")
 SATELLITE_MAP = Path(r"Data\Vedio_1\satellite_map.png")
 PGW_FILE = Path(r"Data\Vedio_1\satellite_map.pgw")
 
-OUTPUT_DIR = Path("Data\Vedio_1\Results")
+OUTPUT_DIR = Path("Data\\Vedio_1\\tmp")
 WORK_DIR = OUTPUT_DIR / "_work"
 PROFILE_DIR = OUTPUT_DIR / "profiling"
 TIMING_CSV = PROFILE_DIR / "frame_timings.csv"

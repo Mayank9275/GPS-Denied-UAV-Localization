@@ -862,7 +862,7 @@ def main():
                         pdm_alpha=opt.pdm_alpha,
                     )
 
-                    XYZ_list, inliers_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
+                    XYZ_list, inliers_list, pnp_input_count_list, match_time, pnp_time = Match2Pos_all_anyvisloc(
                         opt,
                         config,
                         uav_image,
