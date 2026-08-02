@@ -22,6 +22,7 @@ import cProfile
 import csv
 import inspect
 import io
+import json
 import pstats
 import time
 from pathlib import Path
@@ -29,10 +30,16 @@ from typing import Any
 
 import numpy as np
 import torch
+from pyproj import Geod
 
 from single_image_localization import (
     init_real_localization_context,
     localize_image,
+)
+from trajectory_visualizer import (
+    TelemetryRecord,
+    extract_frame_id,
+    parse_srt,
 )
 
 
@@ -42,11 +49,15 @@ from single_image_localization import (
 FRAMES_DIR = Path(r"Data\Vedio_1\Extracted-frames")
 SATELLITE_MAP = Path(r"Data\Vedio_1\satellite_map.png")
 PGW_FILE = Path(r"Data\Vedio_1\satellite_map.pgw")
+SRT_FILE = Path(r"Data\Vedio_1\flight_telemetry.srt")
 
 OUTPUT_DIR = Path("Data\\Vedio_1\\tmp")
 WORK_DIR = OUTPUT_DIR / "_work"
 PROFILE_DIR = OUTPUT_DIR / "profiling"
 TIMING_CSV = PROFILE_DIR / "frame_timings.csv"
+
+SOURCE_VIDEO_FPS = 30.0
+FRAME_EXTRACTION_STEP = 10
 
 
 # =============================================================================
@@ -132,6 +143,7 @@ def validate_paths() -> None:
         FRAMES_DIR,
         SATELLITE_MAP,
         PGW_FILE,
+        SRT_FILE,
         Path(YAML_CONFIG),
     ]
 
@@ -379,6 +391,111 @@ def print_internal_timings(result: Any) -> None:
             print(f"  {stage_name}: {stage_time}")
 
 
+def build_telemetry_lookup(
+    telemetry_records: list[TelemetryRecord],
+) -> dict[int, TelemetryRecord]:
+    return {
+        int(record.srt_counter): record
+        for record in telemetry_records
+    }
+
+
+def resolve_telemetry_record(
+    frame: Path,
+    telemetry_lookup: dict[int, TelemetryRecord],
+    telemetry_records: list[TelemetryRecord],
+) -> TelemetryRecord | None:
+    extracted_frame_index = extract_frame_id(frame.stem)
+    source_frame_index = extracted_frame_index * FRAME_EXTRACTION_STEP
+
+    direct_match = telemetry_lookup.get(source_frame_index)
+    if direct_match is not None:
+        return direct_match
+
+    one_based_match = telemetry_lookup.get(source_frame_index + 1)
+    if one_based_match is not None:
+        return one_based_match
+
+    if 0 <= source_frame_index < len(telemetry_records):
+        return telemetry_records[source_frame_index]
+
+    return None
+
+
+def compute_gps_error_m(
+    predicted_latitude: float,
+    predicted_longitude: float,
+    gt_latitude: float,
+    gt_longitude: float,
+    geod: Geod,
+) -> float:
+    _, _, distance_m = geod.inv(
+        float(predicted_longitude),
+        float(predicted_latitude),
+        float(gt_longitude),
+        float(gt_latitude),
+    )
+    return float(distance_m)
+
+
+def append_ground_truth_to_prediction_json(
+    frame: Path,
+    output_json: str,
+    telemetry_lookup: dict[int, TelemetryRecord],
+    telemetry_records: list[TelemetryRecord],
+    geod: Geod,
+) -> None:
+    output_path = Path(output_json)
+    if not output_path.exists():
+        print(f"Warning: prediction JSON not found for {frame.name}: {output_path}")
+        return
+
+    telemetry_record = resolve_telemetry_record(
+        frame=frame,
+        telemetry_lookup=telemetry_lookup,
+        telemetry_records=telemetry_records,
+    )
+    if telemetry_record is None:
+        print(f"Warning: no matching SRT telemetry record found for {frame.name}")
+        return
+
+    with output_path.open("r", encoding="utf-8") as file:
+        prediction = json.load(file)
+
+    pred_latitude = prediction.get("pred_latitude")
+    pred_longitude = prediction.get("pred_longitude")
+    if pred_latitude is None or pred_longitude is None:
+        print(f"Warning: predicted GPS fields are missing in {output_path.name}")
+        return
+
+    extracted_frame_index = extract_frame_id(frame.stem)
+    source_frame_index = extracted_frame_index * FRAME_EXTRACTION_STEP
+    gps_error_m = compute_gps_error_m(
+        predicted_latitude=float(pred_latitude),
+        predicted_longitude=float(pred_longitude),
+        gt_latitude=telemetry_record.latitude,
+        gt_longitude=telemetry_record.longitude,
+        geod=geod,
+    )
+
+    prediction["gt_latitude"] = float(telemetry_record.latitude)
+    prediction["gt_longitude"] = float(telemetry_record.longitude)
+    prediction["gt_srt_frame_id"] = int(telemetry_record.srt_counter)
+    prediction["source_video_frame_index"] = int(source_frame_index)
+    prediction["source_video_time_seconds"] = float(
+        source_frame_index / SOURCE_VIDEO_FPS
+    )
+    prediction["gps_error_m"] = gps_error_m
+
+    with output_path.open("w", encoding="utf-8") as file:
+        json.dump(prediction, file, ensure_ascii=False, indent=2)
+
+    print(
+        f"GT GPS: latitude={telemetry_record.latitude:.8f}, "
+        f"longitude={telemetry_record.longitude:.8f}, error={gps_error_m:.3f} m"
+    )
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -420,6 +537,9 @@ def main() -> None:
     print("\nInitializing localization context...")
 
     context, context_time = initialize_context()
+    telemetry_records = parse_srt(SRT_FILE)
+    telemetry_lookup = build_telemetry_lookup(telemetry_records)
+    geod = Geod(ellps="WGS84")
 
     print(
         f"Context initialized in {context_time:.3f} seconds."
@@ -500,6 +620,13 @@ def main() -> None:
             if success:
                 successful_times.append(frame_time)
                 print_internal_timings(result)
+                append_ground_truth_to_prediction_json(
+                    frame=frame,
+                    output_json=arguments["output_json"],
+                    telemetry_lookup=telemetry_lookup,
+                    telemetry_records=telemetry_records,
+                    geod=geod,
+                )
 
             running_average = (
                 sum(successful_times) / len(successful_times)

@@ -7,15 +7,7 @@ __pycache__/
 venv/
 env/
 
-# Datasets
-Data/
 
-# Model weights
-weights/
-ckpt/
-*.pth
-*.pt
-*.ckpt
 
 # Results
 outputs/
