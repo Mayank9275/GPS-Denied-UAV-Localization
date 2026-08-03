@@ -7,6 +7,11 @@ __pycache__/
 venv/
 env/
 
+# Model weights
+Matching_Models/RoMa/ckpt/
+Retrieval_Models/CAMP/weights/
+weights/
+
 # Dataset
 Data/
 

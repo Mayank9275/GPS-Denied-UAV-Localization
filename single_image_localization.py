@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import cv2
 import numpy as np
+from pyproj import Transformer
 import torch
 import yaml
 
@@ -37,6 +38,12 @@ from avl_utils import (
 
 warnings.filterwarnings("ignore")
 
+_WORLD_TO_GPS_TRANSFORMER = Transformer.from_crs(
+    "EPSG:3857",
+    "EPSG:4326",
+    always_xy=True,
+)
+
 
 def _read_bgr(path):
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)
@@ -51,6 +58,17 @@ def _rgb_array_to_tensor(image_rgb):
         raise ValueError(f"Expected RGB image with shape [H,W,3], got {rgb.shape}")
     rgb = rgb.astype(np.float32) / 255.0
     return torch.from_numpy(rgb).permute(2, 0, 1).contiguous()
+
+
+def _world_3857_to_gps(world_x, world_y):
+    try:
+        lon, lat = _WORLD_TO_GPS_TRANSFORMER.transform(float(world_x), float(world_y))
+    except Exception as exc:
+        print(
+            f"[warning] Failed to convert predicted world coordinates from EPSG:3857 to EPSG:4326: {exc}"
+        )
+        return None
+    return lon, lat
 
 
 def _infer_metadata_npz(uav_path, dataset_root, scene, sample_id):
@@ -739,6 +757,12 @@ def localize_image(
         "pnp_time_s": [float(x) for x in pnp_time],
         "total_time_s": float(time.time() - t0),
     }
+    gps_coords = _world_3857_to_gps(world_x, world_y)
+    if gps_coords is not None:
+        lon, lat = gps_coords
+        result["pred_latitude"] = float(lat)
+        result["pred_longitude"] = float(lon)
+        print(f"Predicted GPS: latitude={lat:.8f}, longitude={lon:.8f}")
     ensure_dir(Path(output_json).parent)
     with Path(output_json).open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
