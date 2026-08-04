@@ -46,18 +46,18 @@ from trajectory_visualizer import (
 # =============================================================================
 # Paths
 # =============================================================================
-FRAMES_DIR = Path(r"Data\Vedio_1\Extracted-frames")
-SATELLITE_MAP = Path(r"Data\Vedio_1\satellite_map.png")
-PGW_FILE = Path(r"Data\Vedio_1\satellite_map.pgw")
-SRT_FILE = Path(r"Data\Vedio_1\flight_telemetry.srt")
+FRAMES_DIR = Path(r"Data\Vedio_2\Extracted-frames")
+SATELLITE_MAP = Path(r"Data\Vedio_2\satellite_map.png")
+PGW_FILE = Path(r"Data\Vedio_2\satellite_map.pgw")
+SRT_FILE = Path(r"Data\Vedio_2\flight_telemetry.srt")
 
-OUTPUT_DIR = Path("Data\\Vedio_1\\tmp")
+OUTPUT_DIR = Path("Data\Vedio_2\Prediction")
 WORK_DIR = OUTPUT_DIR / "_work"
 PROFILE_DIR = OUTPUT_DIR / "profiling"
 TIMING_CSV = PROFILE_DIR / "frame_timings.csv"
 
 SOURCE_VIDEO_FPS = 30.0
-FRAME_EXTRACTION_STEP = 10
+FRAME_EXTRACTION_STEP = 5
 
 
 # =============================================================================

@@ -1,8 +1,8 @@
 import cv2
 import os
 
-video_path = "Data/Vedio_1/flight_video.mp4"
-output_folder = "Data/Vedio_1/Extracted-frames"
+video_path = "Data/Vedio_2/flight_video.mp4"
+output_folder = "Data/Vedio_2/Extracted-frames"
 
 os.makedirs(output_folder, exist_ok=True)
 
@@ -18,7 +18,7 @@ while True:
         break
 
     # Save only every 10th frame
-    if frame_count % 10 == 0:
+    if frame_count % 5 == 0:
         filename = os.path.join(output_folder, f"frame_{saved_count:05d}.jpg")
         cv2.imwrite(filename, frame)
         saved_count += 1
