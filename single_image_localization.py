@@ -423,6 +423,90 @@ def _compute_prediction_confidence(best_inliers, pnp_input_count):
     return confidence_pct, inlier_ratio
 
 
+def _normalized_retrieval_rank(index, total_candidates):
+    total_candidates = int(max(total_candidates, 1))
+    index = int(max(index, 0))
+    if total_candidates <= 1:
+        return 1.0
+    return float(np.clip(1.0 - (float(index) / float(total_candidates - 1)), 0.0, 1.0))
+
+
+def _build_candidate_evidence(
+    row_starts,
+    col_starts,
+    patch_h,
+    patch_w,
+    XYZ_list,
+    inliers_list,
+    pnp_input_count_list,
+    map_resolution,
+    map_origin_local,
+    best_index,
+):
+    candidates = []
+    total_candidates = int(
+        max(
+            len(row_starts),
+            len(col_starts),
+            len(XYZ_list),
+            len(inliers_list),
+            len(pnp_input_count_list),
+        )
+    )
+
+    for index in range(total_candidates):
+        row0 = int(row_starts[index]) if index < len(row_starts) else None
+        col0 = int(col_starts[index]) if index < len(col_starts) else None
+        xyz = XYZ_list[index] if index < len(XYZ_list) else {}
+        inliers = int(inliers_list[index]) if index < len(inliers_list) else 0
+        pnp_input_count = int(pnp_input_count_list[index]) if index < len(pnp_input_count_list) else 0
+        inlier_ratio = (
+            float(inliers) / float(max(pnp_input_count, 1))
+            if inliers > 0 and pnp_input_count > 0
+            else 0.0
+        )
+
+        local_x = None if xyz.get("X") is None else float(xyz.get("X"))
+        local_y = None if xyz.get("Y") is None else float(xyz.get("Y"))
+        local_z = None if xyz.get("Z") is None else float(xyz.get("Z"))
+        pixel_col = None
+        pixel_row = None
+        if local_x is not None and local_y is not None:
+            pixel_col, pixel_row = _local_xy_to_pixel(
+                local_x,
+                local_y,
+                map_resolution,
+                map_origin_local,
+            )
+            pixel_col = float(pixel_col)
+            pixel_row = float(pixel_row)
+
+        candidates.append(
+            {
+                "candidate_index": int(index),
+                "retrieval_rank": int(index + 1),
+                "retrieval_rank_score": _normalized_retrieval_rank(index, total_candidates),
+                "patch_row": row0,
+                "patch_col": col0,
+                "patch_h": int(patch_h),
+                "patch_w": int(patch_w),
+                "pnp_x_local_m": local_x,
+                "pnp_y_local_m": local_y,
+                "pnp_z_local_m": local_z,
+                "pnp_col": pixel_col,
+                "pnp_row": pixel_row,
+                "pnp_inliers": int(inliers),
+                "pnp_input_count": int(pnp_input_count),
+                "inlier_ratio": float(inlier_ratio),
+                "retrieval_score": None,
+                "is_pnp_verified": bool(local_x is not None and local_y is not None and inliers > 0),
+                "is_selected": bool(best_index is not None and int(index) == int(best_index)),
+            }
+        )
+
+    return candidates
+
+
 def build_real_reference_view(satellite_bgr, pgw):
     h, w = satellite_bgr.shape[:2]
     if abs(float(pgw["b"])) > 1e-9 or abs(float(pgw["d"])) > 1e-9:
@@ -719,6 +803,18 @@ def localize_image(
             f"satellite_size=({satellite_w}, {satellite_h}), inside={inside}"
         )
     world_x, world_y = pixel_to_world(pred_col, pred_row, pgw)
+    candidate_evidence = _build_candidate_evidence(
+        row_starts,
+        col_starts,
+        patch_h,
+        patch_w,
+        XYZ_list,
+        inliers_list,
+        pnp_input_count_list,
+        view["map_resolution"],
+        view["map_origin_local"],
+        best_index,
+    )
 
     label = f"UAV ({pred_col:.1f}, {pred_row:.1f}) | Conf {confidence_pct:.1f}%"
     marked, prediction_within_map = _draw_real_prediction(
@@ -752,6 +848,7 @@ def localize_image(
         "inlier_ratio": inlier_ratio,
         "confidence_pct": confidence_pct,
         "retrieved_candidates": retrieved_candidates,
+        "candidate_evidence": candidate_evidence,
         "retrieval_time_s": float(retrieval_time),
         "match_time_s": [float(x) for x in match_time],
         "pnp_time_s": [float(x) for x in pnp_time],
@@ -962,6 +1059,18 @@ def main():
         args.output,
         draw_text=not args.no_text,
     )
+    candidate_evidence = _build_candidate_evidence(
+        row_starts,
+        col_starts,
+        patch_h,
+        patch_w,
+        XYZ_list,
+        inliers_list,
+        pnp_input_count_list,
+        view["map_resolution"],
+        view["map_origin_local"],
+        best_index,
+    )
 
     result = {
         "uav": None if uav_path is None else str(uav_path),
@@ -980,6 +1089,7 @@ def main():
         "best_pnp_input_count": best_pnp_input_count,
         "inlier_ratio": inlier_ratio,
         "confidence_pct": confidence_pct,
+        "candidate_evidence": candidate_evidence,
         "retrieval_time_s": float(retrieval_time),
         "match_time_s": [float(x) for x in match_time],
         "pnp_time_s": [float(x) for x in pnp_time],
