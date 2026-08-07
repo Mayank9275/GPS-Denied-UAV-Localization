@@ -422,6 +422,20 @@ def resolve_telemetry_record(
     return None
 
 
+def compute_gps_error_m(
+    predicted_latitude: float,
+    predicted_longitude: float,
+    gt_latitude: float,
+    gt_longitude: float,
+    geod: Geod,
+) -> float:
+    _, _, distance_m = geod.inv(
+        float(predicted_longitude),
+        float(predicted_latitude),
+        float(gt_longitude),
+        float(gt_latitude),
+    )
+    return float(distance_m)
 
 
 
