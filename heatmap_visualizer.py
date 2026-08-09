@@ -102,27 +102,7 @@ def _resolve_satellite_path(result, result_json_path):
     )
 
 
-def _resolve_world_file_affine(result, satellite_path):
-    affine = result.get("world_file_affine")
-    if isinstance(affine, dict):
-        required = ("a", "d", "b", "e", "c", "f")
-        if all(key in affine for key in required):
-            return {key: float(affine[key]) for key in required}
 
-    for key in ("pgw_file", "world_file", "world_file_path", "satellite_pgw"):
-        if key in result and result[key]:
-            candidate = Path(result[key])
-            if candidate.exists():
-                return _read_pgw(candidate)
-
-    for candidate in (
-        satellite_path.with_suffix(".pgw"),
-        satellite_path.with_suffix(".wld"),
-    ):
-        if candidate.exists():
-            return _read_pgw(candidate)
-
-    return None
 
 
 def _resolve_ground_truth_point(
