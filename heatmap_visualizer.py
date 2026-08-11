@@ -57,7 +57,17 @@ def _read_pgw(path):
     }
 
 
-
+def _world_to_pixel(world_x, world_y, pgw):
+    matrix = np.array(
+        [
+            [pgw["a"], pgw["b"]],
+            [pgw["d"], pgw["e"]],
+        ],
+        dtype=np.float64,
+    )
+    offset = np.array([world_x - pgw["c"], world_y - pgw["f"]], dtype=np.float64)
+    col_row = np.linalg.solve(matrix, offset)
+    return float(col_row[0]), float(col_row[1])
 
 
 def _build_crs_transformer(source_crs, target_crs):
