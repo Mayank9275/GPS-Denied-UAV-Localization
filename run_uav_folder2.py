@@ -439,62 +439,7 @@ def compute_gps_error_m(
 
 
 
-def append_ground_truth_to_prediction_json(
-    frame: Path,
-    output_json: str,
-    telemetry_lookup: dict[int, TelemetryRecord],
-    telemetry_records: list[TelemetryRecord],
-    geod: Geod,
-) -> None:
-    output_path = Path(output_json)
-    if not output_path.exists():
-        print(f"Warning: prediction JSON not found for {frame.name}: {output_path}")
-        return
 
-    telemetry_record = resolve_telemetry_record(
-        frame=frame,
-        telemetry_lookup=telemetry_lookup,
-        telemetry_records=telemetry_records,
-    )
-    if telemetry_record is None:
-        print(f"Warning: no matching SRT telemetry record found for {frame.name}")
-        return
-
-    with output_path.open("r", encoding="utf-8") as file:
-        prediction = json.load(file)
-
-    pred_latitude = prediction.get("pred_latitude")
-    pred_longitude = prediction.get("pred_longitude")
-    if pred_latitude is None or pred_longitude is None:
-        print(f"Warning: predicted GPS fields are missing in {output_path.name}")
-        return
-
-    extracted_frame_index = extract_frame_id(frame.stem)
-    source_frame_index = extracted_frame_index * FRAME_EXTRACTION_STEP
-    gps_error_m = compute_gps_error_m(
-        predicted_latitude=float(pred_latitude),
-        predicted_longitude=float(pred_longitude),
-        gt_latitude=telemetry_record.latitude,
-        gt_longitude=telemetry_record.longitude,
-        geod=geod,
-    )
-
-    prediction["gt_latitude"] = float(telemetry_record.latitude)
-    prediction["gt_longitude"] = float(telemetry_record.longitude)
-    prediction["gt_srt_frame_id"] = int(telemetry_record.srt_counter)
-    prediction["source_video_frame_index"] = int(source_frame_index)
-    prediction["source_video_time_seconds"] = float(
-        source_frame_index / SOURCE_VIDEO_FPS
-    )
-    prediction["gps_error_m"] = gps_error_m
-
-    with output_path.open("w", encoding="utf-8") as file:
-        json.dump(prediction, file, ensure_ascii=False, indent=2)
-
-    print(
-        f"GT GPS: latitude={telemetry_record.latitude:.8f}, "
-        f"longitude={telemetry_record.longitude:.8f}, error={gps_error_m:.3f} m"
-    )
 
 
 # =============================================================================
