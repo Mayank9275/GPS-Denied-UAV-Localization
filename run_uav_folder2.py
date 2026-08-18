@@ -48,7 +48,7 @@ from trajectory_visualizer import (
 # =============================================================================
 FRAMES_DIR = Path(r"Data\Vedio_2\Extracted-frames")
 SATELLITE_MAP = Path(r"Data\Vedio_2\satellite_map.png")
-PGW_FILE = Path(r"Data\Vedio_1\satellite_map.pgw")
+PGW_FILE = Path(r"Data\Vedio_2\satellite_map.pgw")
 SRT_FILE = Path(r"Data\Vedio_2\flight_telemetry.srt")
 
 OUTPUT_DIR = Path(r"Data\Vedio_2\lol")
