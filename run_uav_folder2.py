@@ -51,7 +51,7 @@ SATELLITE_MAP = Path(r"Data\Vedio_2\satellite_map.png")
 PGW_FILE = Path(r"Data\Vedio_2\satellite_map.pgw")
 SRT_FILE = Path(r"Data\Vedio_2\flight_telemetry.srt")
 
-OUTPUT_DIR = Path(r"Data\Vedio_2\lol")
+OUTPUT_DIR = Path(r"Data\Vedio_2\Prediction")
 WORK_DIR = OUTPUT_DIR / "_work"
 PROFILE_DIR = OUTPUT_DIR / "profiling"
 TIMING_CSV = PROFILE_DIR / "frame_timings.csv"
